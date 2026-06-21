@@ -84,6 +84,7 @@ tail -f ~/machine-nodes-node/node.out          # node
 tail -n 30 ~/machine-nodes-node/handshake.log
 ```
 - 看到 `DONE el=43200s` → soak 正常跑满 12h 结束了（不是故障）。要续跑：重跑 installer 或拉长 `HS_DURATION`。
+- 看到 `DONE el=<远大于 DURATION 的离谱值>`（如 `el=2804510s`）+ `ok=0` → **旧版墙钟回拨 bug**：节点（尤其无 RTC 的树莓派 pre-NTP 启动、或 Mac 挂起唤醒）开机时钟不准，NTP 校时后 `el` 暴涨秒触发 DONE。**已修**（节点 agent 改用 `time.monotonic()` 计时长，不受墙钟跳变影响）；拉最新 `node-agent.py` 重装即可。systemd 会自动重起一个干净实例，故 center 仍可能看到该节点在涨。
 - 看到 `STOPPED` → 有人 `touch handshake.stop` 停了（`rm` 掉哨兵 + 重起服务即续）。
 - log 停在中途、无 DONE/STOPPED、且服务显示 active 但不动 → agent 卡死/异常。重起服务：
   ```bash

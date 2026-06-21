@@ -50,7 +50,7 @@ def getv(fn, key):
 
 def do_cycle(seq):
     """return (ok:bool, step:str, rtt_ms:int)"""
-    t0 = time.time()
+    t0 = time.monotonic()  # 单调钟测 RTT:不受 NTP 校时/挂起回拨影响
     na = nonce()
     # 1) node 新建挑战文件 + 读回(证 node 自己也走文件)
     cf = os.path.join(OUT, "chal-%s.txt" % seq)
@@ -61,19 +61,19 @@ def do_cycle(seq):
     try:
         resp = post("/hs/challenge", {"node": NODE, "seq": seq, "challenge": na_read})
     except Exception as e:
-        return False, "post-challenge[%s]" % type(e).__name__, int((time.time() - t0) * 1000)
+        return False, "post-challenge[%s]" % type(e).__name__, int((time.monotonic() - t0) * 1000)
     got = str(resp.get("got_challenge", "")); cnonce = str(resp.get("center_nonce", ""))
     # 验 center 真读了 node 的挑战(方向1)
     if got != na:
-        return False, "DIR1-mismatch[got=%s]" % got[:8], int((time.time() - t0) * 1000)
+        return False, "DIR1-mismatch[got=%s]" % got[:8], int((time.monotonic() - t0) * 1000)
     if not cnonce:
-        return False, "DIR1-no-center-nonce", int((time.time() - t0) * 1000)
+        return False, "DIR1-no-center-nonce", int((time.monotonic() - t0) * 1000)
     # 3) node 把 center 的 nonce 写进文件 + 读回(证 node 真读了 center 的内容)
     rf = os.path.join(INp, "resp-%s.txt" % seq)
     with open(rf, "w") as f:
         f.write("seq=%s\ncenter_nonce=%s\nts=%s\n" % (seq, cnonce, ts()))
     cnonce_read = getv(rf, "center_nonce")
-    rtt = int((time.time() - t0) * 1000)
+    rtt = int((time.monotonic() - t0) * 1000)
     # 4) POST 确认
     try:
         cr = post("/hs/confirm", {"node": NODE, "seq": seq, "confirm": cnonce_read, "rtt_ms": rtt})
@@ -108,9 +108,11 @@ def main():
         f.write("[%s] NODE START node=%s persona=%s center=%s interval=%ss duration=%ss\n" % (
             ts(), NODE, PERSONA, CENTER, INTERVAL, DURATION))
     register()
-    start = time.time(); seq = 0; ok = 0; fail = 0
+    # ★单调钟做 soak 时长计:防 pre-NTP 启动/挂起唤醒令 wall-clock 跳变 → el 暴增 → 秒 DONE
+    #   (2026-06-21 rasjol 实犯:某实例 DONE el=2804510s = wall-clock 回拨artifact)
+    start = time.monotonic(); seq = 0; ok = 0; fail = 0
     while True:
-        el = int(time.time() - start)
+        el = int(time.monotonic() - start)
         if el >= DURATION:
             with open(LOG, "a") as f:
                 f.write("[%s] DONE el=%ss ok=%d fail=%d\n" % (ts(), el, ok, fail)); break
