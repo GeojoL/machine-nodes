@@ -93,22 +93,46 @@ EOF
   systemctl --user daemon-reload; systemctl --user enable --now machine-nodes-node.service
   say "systemd user service machine-nodes-node 已起"
 }
-start_launchd(){
-  local pl="$HOME/Library/LaunchAgents/com.geojol.machine-nodes-node.plist"; mkdir -p "$(dirname "$pl")"
+start_darwin(){
+  # ★macOS:launchd 后台进程够不到本地网络(Local Network Privacy → 连 LAN/ZT center EHOSTUNREACH;
+  #   macjol 实测:shell/tmux 上下文 curl+urllib 都通,launchd 直起必失败)。故 node-agent 的【握手腿】
+  #   必须跑在【有网的 tmux 上下文】;launchd 仅作【看护层】(纯 tmux 操作,不碰网络)。
+  #   ⚠ tmux 会话须从【有网交互上下文】首次建立(本 installer 即此上下文);重启/登出致 tmux server 整个没了后,
+  #     需从交互终端重跑本 installer 重建(或给 python 授 System Settings>Privacy>Local Network 后才可纯 launchd)。
+  command -v tmux >/dev/null || { echo "macOS 节点需 tmux(brew install tmux):node-agent 须跑有网 tmux 上下文"; exit 1; }
+  local TB; TB="$(command -v tmux)"
+  local SESS="${MN_TMUX_SESSION:-mn-node}" WIN=nodeagent
+  local LOOP="while true; do CENTER=$CENTER NODE=$NODE PERSONA=$PERSONA HS_INTERVAL=$INTERVAL HS_DURATION=$DURATION $PY $BIN/mn-node-agent.py; echo \"[respawn \$(date +%H:%M:%S)]\"; sleep 5; done"
+  "$TB" has-session -t "$SESS" 2>/dev/null || "$TB" new-session -d -s "$SESS" -n "$WIN"
+  "$TB" list-windows -t "$SESS" -F '#{window_name}' 2>/dev/null | grep -qix "$WIN" || "$TB" new-window -d -t "$SESS" -n "$WIN"
+  "$TB" send-keys -t "$SESS:$WIN" -l "$LOOP"; "$TB" send-keys -t "$SESS:$WIN" Enter
+  say "node-agent 起在 tmux $SESS:$WIN(有网上下文)respawn 循环"
+  # 看护脚本(纯 tmux 操作,不碰网络):会话/窗口没了就重建+重起循环(仅在刚重建时起,避免 respawn 间隙双起)
+  local guard="$BIN/mn-node-guard.sh"
+  cat > "$guard" <<GUARD
+#!/usr/bin/env bash
+set -uo pipefail
+TB="\$(command -v tmux || echo $TB)"; SESS="$SESS"; WIN="$WIN"; NEW=
+LOOP='$LOOP'
+"\$TB" has-session -t "\$SESS" 2>/dev/null || { "\$TB" new-session -d -s "\$SESS" -n "\$WIN"; NEW=1; }
+"\$TB" list-windows -t "\$SESS" -F '#{window_name}' 2>/dev/null | grep -qix "\$WIN" || { "\$TB" new-window -d -t "\$SESS" -n "\$WIN"; NEW=1; }
+[ -n "\$NEW" ] && { "\$TB" send-keys -t "\$SESS:\$WIN" -l "\$LOOP"; "\$TB" send-keys -t "\$SESS:\$WIN" Enter; }
+GUARD
+  chmod +x "$guard"
+  local pl="$HOME/Library/LaunchAgents/com.geojol.mn-node-guard.plist"; mkdir -p "$(dirname "$pl")"
   cat > "$pl" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
- <key>Label</key><string>com.geojol.machine-nodes-node</string>
- <key>ProgramArguments</key><array><string>$PY</string><string>$BIN/mn-node-agent.py</string></array>
- <key>EnvironmentVariables</key><dict>
-   <key>CENTER</key><string>$CENTER</string><key>NODE</key><string>$NODE</string>
-   <key>PERSONA</key><string>$PERSONA</string><key>HS_INTERVAL</key><string>$INTERVAL</string><key>HS_DURATION</key><string>$DURATION</string></dict>
- <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+ <key>Label</key><string>com.geojol.mn-node-guard</string>
+ <key>ProgramArguments</key><array><string>/bin/bash</string><string>$guard</string></array>
+ <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+ <key>StartInterval</key><integer>120</integer><key>RunAtLoad</key><true/>
 </dict></plist>
 EOF
-  launchctl unload "$pl" 2>/dev/null || true; launchctl load "$pl"
-  say "launchd agent machine-nodes-node 已起(macOS)"
+  launchctl bootout "gui/$(id -u)/com.geojol.mn-node-guard" 2>/dev/null || launchctl unload "$pl" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$pl" 2>/dev/null || launchctl load "$pl" 2>/dev/null || true
+  say "看护 launchd com.geojol.mn-node-guard 已起(纯 tmux 操作:会话/窗口没了重建+重起 respawn)"
 }
 start_nohup(){
   pkill -f "mn-node-agent.py" 2>/dev/null || true; sleep 0.5
@@ -118,7 +142,7 @@ start_nohup(){
 }
 case "$OS" in
   Linux)  if command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then start_systemd; else start_nohup; fi ;;
-  Darwin) start_launchd ;;
+  Darwin) start_darwin ;;
   *)      start_nohup ;;
 esac
 
