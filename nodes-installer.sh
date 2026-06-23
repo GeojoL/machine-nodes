@@ -10,7 +10,7 @@ CENTER="${CENTER:-}"; [ -n "$CENTER" ] || { echo "需要 CENTER 环境变量,如
 CENTER="${CENTER%/}"
 NODE="${NODE:-$(hostname | cut -d. -f1)}"
 INTERVAL="${HS_INTERVAL:-60}"; DURATION="${HS_DURATION:-43200}"
-RAW="${MN_RAW:-https://raw.githubusercontent.com/GeojoL/machine-nodes/main}"
+RAW="${MN_RAW:-https://raw.githubusercontent.com/GeojoL/the-union/main}"
 BIN="$HOME/.local/bin"; NHOME="$HOME/machine-nodes-node"; mkdir -p "$BIN" "$NHOME"
 say(){ printf '\033[35m[nodes-installer]\033[0m %s\n' "$*"; }
 command -v python3 >/dev/null || { echo "需要 python3"; exit 1; }

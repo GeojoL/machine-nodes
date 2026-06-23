@@ -8,7 +8,7 @@
 set -euo pipefail
 PORT="${CENTER_PORT:-8770}"
 HOME_DIR="${CENTER_HOME:-$HOME/machine-nodes-center}"
-RAW="${MN_RAW:-https://raw.githubusercontent.com/GeojoL/machine-nodes/main}"
+RAW="${MN_RAW:-https://raw.githubusercontent.com/GeojoL/the-union/main}"
 BIN="$HOME/.local/bin"; mkdir -p "$BIN" "$HOME_DIR"
 say(){ printf '\033[36m[center-installer]\033[0m %s\n' "$*"; }
 
