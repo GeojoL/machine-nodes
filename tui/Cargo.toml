@@ -1,0 +1,21 @@
+[package]
+name = "union-tui"
+version = "0.1.0"
+edition = "2021"
+description = "The Union — 中心机/节点机控制台 TUI(消息中心 + 人格管理 + 状态;服务控制/守护/升级迭代中)"
+
+[[bin]]
+name = "union-tui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
